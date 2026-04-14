@@ -37,7 +37,10 @@ class CommandOutput {
             <div class="terminal">
                 <div class="terminal-header">
                     <span class="terminal-title">Output</span>
-                    <button class="clear-btn">Clear</button>
+                    <span class="terminal-actions">
+                        <button class="copy-btn">Copy</button>
+                        <button class="clear-btn">Clear</button>
+                    </span>
                 </div>
                 <div class="output">
                     <div class="empty">Waiting for command...</div>
@@ -46,6 +49,7 @@ class CommandOutput {
         `;
         this._output = this._container.querySelector('.output');
         this._container.querySelector('.clear-btn').addEventListener('click', () => this.clear());
+        this._container.querySelector('.copy-btn').addEventListener('click', () => this.copyToClipboard());
     }
 
     appendLine(text, type) {
@@ -69,6 +73,16 @@ class CommandOutput {
     clear() {
         this._hasContent = false;
         this._output.innerHTML = '<div class="empty">Waiting for command...</div>';
+    }
+
+    copyToClipboard() {
+        const lines = this._output.querySelectorAll('.line span:last-child');
+        const text = Array.from(lines).map(s => s.textContent).join('\n');
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = this._container.querySelector('.copy-btn');
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+        });
     }
 }
 
@@ -473,7 +487,8 @@ SymfonyCommand.STYLES = `
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }
-    .clear-btn {
+    .terminal-actions { display: flex; gap: 6px; }
+    .copy-btn, .clear-btn {
         background: transparent;
         color: var(--cmd-info);
         border: 1px solid var(--cmd-border);
@@ -483,7 +498,7 @@ SymfonyCommand.STYLES = `
         cursor: pointer;
         font-family: var(--cmd-font);
     }
-    .clear-btn:hover { color: var(--cmd-text); border-color: var(--cmd-accent); }
+    .copy-btn:hover, .clear-btn:hover { color: var(--cmd-text); border-color: var(--cmd-accent); }
     .output {
         max-height: 400px;
         overflow-y: auto;
