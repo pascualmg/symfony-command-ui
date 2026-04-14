@@ -275,7 +275,13 @@ HTML;
             if (true === $value) {
                 $args[] = $key;
             } elseif (false !== $value && '' !== $value && null !== $value) {
-                $args[] = "{$key}={$value}";
+                // Positional arguments (no -- prefix) are passed by value only.
+                // Options (--name) are passed as --name=value.
+                if (0 !== \strpos($key, '-')) {
+                    $args[] = (string) $value;
+                } else {
+                    $args[] = "{$key}={$value}";
+                }
             }
         }
 
