@@ -1,0 +1,41 @@
+{
+    "name": "pascualmg/symfony-command-ui",
+    "description": "Web UI + API to execute Symfony console commands from the browser or any AI agent. Auto-discovers commands, dynamic forms, NDJSON streaming terminal.",
+    "type": "symfony-bundle",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Pascual Munoz Galian",
+            "email": "info@pascualmg.dev"
+        }
+    ],
+    "require": {
+        "php": ">=7.4",
+        "symfony/framework-bundle": "^5.4 || ^6.0 || ^7.0",
+        "symfony/process": "^5.4 || ^6.0 || ^7.0",
+        "symfony/http-foundation": "^5.4 || ^6.0 || ^7.0",
+        "symfony/routing": "^5.4 || ^6.0 || ^7.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Pascualmg\\SymfonyCommandUI\\": "src/"
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "0.1.x-dev"
+        }
+    },
+    "minimum-stability": "stable",
+    "keywords": [
+        "symfony",
+        "console",
+        "web-ui",
+        "ndjson",
+        "streaming",
+        "web-components",
+        "mcp",
+        "ai-agents",
+        "command-runner"
+    ]
+}
