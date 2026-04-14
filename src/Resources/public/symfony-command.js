@@ -52,13 +52,13 @@ class CommandOutput {
         this._container.querySelector('.copy-btn').addEventListener('click', () => this.copyToClipboard());
     }
 
-    appendLine(text, type) {
+    appendLine(text, type, chrome) {
         if (!this._hasContent) {
             this._output.innerHTML = '';
             this._hasContent = true;
         }
         const line = document.createElement('div');
-        line.className = 'line ' + (type || 'info');
+        line.className = 'line ' + (type || 'info') + (chrome ? ' chrome' : '');
         const ts = document.createElement('span');
         ts.className = 'ts';
         ts.textContent = new Date().toLocaleTimeString();
@@ -76,7 +76,7 @@ class CommandOutput {
     }
 
     copyToClipboard() {
-        const lines = this._output.querySelectorAll('.line span:last-child');
+        const lines = this._output.querySelectorAll('.line:not(.chrome) span:last-child');
         const text = Array.from(lines).map(s => s.textContent).join('\n');
         navigator.clipboard.writeText(text).then(() => {
             const btn = this._container.querySelector('.copy-btn');
@@ -292,7 +292,7 @@ class SymfonyCommand extends HTMLElement {
     async _executeCommand(endpoint, cmd, options) {
         this._form.setStatus('running');
         this._output.clear();
-        this._output.appendLine(`$ bin/console ${cmd.command} ${Object.entries(options).map(([k,v]) => v === true ? k : `${k}=${v}`).filter(x => !x.endsWith('=false')).join(' ')}`, 'info');
+        this._output.appendLine(`$ bin/console ${cmd.command} ${Object.entries(options).map(([k,v]) => v === true ? k : `${k}=${v}`).filter(x => !x.endsWith('=false')).join(' ')}`, 'info', true);
 
         this.dispatchEvent(new CustomEvent('command-started', {
             detail: { command: cmd.command, options }
@@ -339,7 +339,8 @@ class SymfonyCommand extends HTMLElement {
                             const icon = ok ? 'OK' : 'FAIL';
                             this._output.appendLine(
                                 `[${icon}] exit=${data.exitCode ?? 0} duration=${data.duration || '?'}`,
-                                ok ? 'success' : 'error'
+                                ok ? 'success' : 'error',
+                                true
                             );
                         } else if (data.type === 'batch') {
                             this._output.appendLine(
