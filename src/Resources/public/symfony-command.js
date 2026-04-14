@@ -5,133 +5,84 @@
  *
  * Usage:
  *   <script type="module" src="symfony-command.js"></script>
- *   <symfony-command
- *     endpoint="/api/console"
- *     commands='[{"command":"app:example","label":"Example","config":{"--verbose":true,"--limit":[10,50,100]}}]'>
- *   </symfony-command>
+ *   <symfony-command endpoint="/symfony-console"></symfony-command>
  *
- * Backend protocol:
- *   POST endpoint with {"command":"app:example","options":{"--verbose":true,"--limit":50}}
- *   Response: NDJSON stream (Content-Type: application/x-ndjson)
- *     {"type":"line","text":"output..."}
- *     {"type":"complete","exitCode":0,"duration":"1.2s"}
- *
- * Theming: override CSS custom properties on the element.
+ * Each command renders as an independent card with its own form,
+ * Run button, and terminal output. Outputs persist across commands.
  *
  * @author Pascual Munoz Galian <info@pascualmg.dev>
  * @license MIT
  */
 
 // ============================================================
-// INTERNAL: CommandOutput — terminal visual
+// INTERNAL: CommandCard — one command = one card with form + output
 // ============================================================
-class CommandOutput {
-    constructor(container) {
+class CommandCard {
+    constructor(container, cmd, endpoint) {
         this._container = container;
-        this._hasContent = false;
-        this._render();
-    }
-
-    _render() {
-        this._container.innerHTML = `
-            <div class="terminal">
-                <div class="terminal-header">
-                    <span class="terminal-title">Output</span>
-                    <span class="terminal-actions">
-                        <button class="copy-btn">Copy</button>
-                        <button class="clear-btn">Clear</button>
-                    </span>
-                </div>
-                <div class="output">
-                    <div class="empty">Waiting for command...</div>
-                </div>
-            </div>
-        `;
-        this._output = this._container.querySelector('.output');
-        this._container.querySelector('.clear-btn').addEventListener('click', () => this.clear());
-        this._container.querySelector('.copy-btn').addEventListener('click', () => this.copyToClipboard());
-    }
-
-    appendLine(text, type, chrome) {
-        if (!this._hasContent) {
-            this._output.innerHTML = '';
-            this._hasContent = true;
-        }
-        const line = document.createElement('div');
-        line.className = 'line ' + (type || 'info') + (chrome ? ' chrome' : '');
-        const ts = document.createElement('span');
-        ts.className = 'ts';
-        ts.textContent = new Date().toLocaleTimeString();
-        const content = document.createElement('span');
-        content.textContent = text;
-        line.appendChild(ts);
-        line.appendChild(content);
-        this._output.appendChild(line);
-        this._output.scrollTop = this._output.scrollHeight;
-    }
-
-    clear() {
-        this._hasContent = false;
-        this._output.innerHTML = '<div class="empty">Waiting for command...</div>';
-    }
-
-    copyToClipboard() {
-        const lines = this._output.querySelectorAll('.line:not(.chrome) span:last-child');
-        const text = Array.from(lines).map(s => s.textContent).join('\n');
-        navigator.clipboard.writeText(text).then(() => {
-            const btn = this._container.querySelector('.copy-btn');
-            btn.textContent = 'Copied!';
-            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
-        });
-    }
-}
-
-// ============================================================
-// INTERNAL: CommandForm — dynamic form from config JSON
-// ============================================================
-class CommandForm {
-    constructor(container, commands, onExecute) {
-        this._container = container;
-        this._commands = commands;
-        this._onExecute = onExecute;
-        this._selectedIndex = 0;
+        this._cmd = cmd;
+        this._endpoint = endpoint;
         this._running = false;
+        this._hasOutput = false;
         this._render();
     }
 
     _render() {
-        let html = '<div class="form-area">';
+        const cmd = this._cmd;
+        const card = document.createElement('div');
+        card.className = 'card';
 
-        // Command selector (tabs if multiple, hidden if single)
-        if (this._commands.length > 1) {
-            html += '<div class="cmd-tabs">';
-            this._commands.forEach((cmd, i) => {
-                const active = i === this._selectedIndex ? ' active' : '';
-                html += `<button class="cmd-tab${active}" data-index="${i}">${this._esc(cmd.label)}</button>`;
-            });
-            html += '</div>';
-        }
+        // Header
+        const header = document.createElement('div');
+        header.className = 'card-header';
+        header.innerHTML = `
+            <div class="card-title">${this._esc(cmd.command)}</div>
+            <div class="card-desc">${this._esc(cmd.label)}</div>
+        `;
+        card.appendChild(header);
 
-        // Form for each command (only selected visible)
-        this._commands.forEach((cmd, i) => {
-            const display = i === this._selectedIndex ? 'block' : 'none';
-            html += `<div class="cmd-form" data-index="${i}" style="display:${display}">`;
-            html += this._buildOptions(cmd.config || {});
-            html += '</div>';
-        });
+        // Options
+        const options = document.createElement('div');
+        options.className = 'card-options';
+        options.innerHTML = this._buildOptions(cmd.config || {});
+        card.appendChild(options);
+        this._optionsEl = options;
 
-        // Run button
-        html += '<div class="cmd-actions">';
-        html += '<button class="run-btn" id="run-btn">Run</button>';
-        html += '</div>';
-        html += '</div>';
+        // Actions bar
+        const actions = document.createElement('div');
+        actions.className = 'card-actions';
+        this._runBtn = document.createElement('button');
+        this._runBtn.className = 'run-btn';
+        this._runBtn.textContent = 'Run';
+        this._runBtn.addEventListener('click', () => this._execute());
+        actions.appendChild(this._runBtn);
 
-        this._container.innerHTML = html;
-        this._setupListeners();
+        this._copyBtn = document.createElement('button');
+        this._copyBtn.className = 'action-btn';
+        this._copyBtn.textContent = 'Copy';
+        this._copyBtn.addEventListener('click', () => this._copy());
+        actions.appendChild(this._copyBtn);
+
+        this._clearBtn = document.createElement('button');
+        this._clearBtn.className = 'action-btn';
+        this._clearBtn.textContent = 'Clear';
+        this._clearBtn.addEventListener('click', () => this._clearOutput());
+        actions.appendChild(this._clearBtn);
+
+        card.appendChild(actions);
+
+        // Output terminal
+        const output = document.createElement('div');
+        output.className = 'card-output';
+        output.innerHTML = '<div class="empty">Ready</div>';
+        card.appendChild(output);
+        this._outputEl = output;
+
+        this._container.appendChild(card);
     }
 
     _buildOptions(config) {
-        let html = '<div class="cmd-options">';
+        let html = '';
         for (const [key, value] of Object.entries(config)) {
             const label = key.replace(/^--?/, '');
             if (typeof value === 'boolean') {
@@ -144,36 +95,15 @@ class CommandForm {
             } else if (typeof value === 'string') {
                 html += `<label class="opt-input"><span>${this._esc(label)}</span><input type="text" data-option="${this._esc(key)}" value="${this._esc(value)}"></label>`;
             } else {
-                // [] empty array = free text
                 html += `<label class="opt-input"><span>${this._esc(label)}</span><input type="text" data-option="${this._esc(key)}" placeholder="${this._esc(label)}"></label>`;
             }
         }
-        html += '</div>';
         return html;
     }
 
-    _setupListeners() {
-        // Tab switching
-        this._container.querySelectorAll('.cmd-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                if (this._running) return;
-                this._selectedIndex = parseInt(tab.dataset.index);
-                this._render();
-            });
-        });
-        // Run
-        this._container.querySelector('#run-btn').addEventListener('click', () => {
-            if (this._running) return;
-            this._execute();
-        });
-    }
-
-    _execute() {
-        const cmd = this._commands[this._selectedIndex];
-        const form = this._container.querySelector(`.cmd-form[data-index="${this._selectedIndex}"]`);
+    _collectOptions() {
         const options = {};
-
-        form.querySelectorAll('[data-option]').forEach(el => {
+        this._optionsEl.querySelectorAll('[data-option]').forEach(el => {
             const key = el.dataset.option;
             if (el.type === 'checkbox') {
                 options[key] = el.checked;
@@ -185,24 +115,112 @@ class CommandForm {
                 if (el.value !== '') options[key] = el.value;
             }
         });
-
-        this._onExecute(cmd, options);
+        return options;
     }
 
-    setStatus(status) {
-        this._running = status === 'running';
-        const btn = this._container.querySelector('#run-btn');
-        if (!btn) return;
-        if (status === 'running') {
-            btn.textContent = 'Running...';
-            btn.disabled = true;
-        } else if (status === 'error') {
-            btn.textContent = 'Run';
-            btn.disabled = false;
-        } else {
-            btn.textContent = 'Run';
-            btn.disabled = false;
+    _appendLine(text, type, chrome) {
+        if (!this._hasOutput) {
+            this._outputEl.innerHTML = '';
+            this._hasOutput = true;
         }
+        const line = document.createElement('div');
+        line.className = 'line ' + (type || 'info') + (chrome ? ' chrome' : '');
+        const ts = document.createElement('span');
+        ts.className = 'ts';
+        ts.textContent = new Date().toLocaleTimeString();
+        const content = document.createElement('span');
+        content.textContent = text;
+        line.appendChild(ts);
+        line.appendChild(content);
+        this._outputEl.appendChild(line);
+        this._outputEl.scrollTop = this._outputEl.scrollHeight;
+    }
+
+    _clearOutput() {
+        this._hasOutput = false;
+        this._outputEl.innerHTML = '<div class="empty">Ready</div>';
+    }
+
+    _copy() {
+        const lines = this._outputEl.querySelectorAll('.line:not(.chrome) span:last-child');
+        const text = Array.from(lines).map(s => s.textContent).join('\n');
+        navigator.clipboard.writeText(text).then(() => {
+            this._copyBtn.textContent = 'Copied!';
+            setTimeout(() => { this._copyBtn.textContent = 'Copy'; }, 1500);
+        });
+    }
+
+    async _execute() {
+        if (this._running) return;
+        this._running = true;
+        this._runBtn.textContent = 'Running...';
+        this._runBtn.disabled = true;
+
+        const cmd = this._cmd;
+        const options = this._collectOptions();
+
+        this._clearOutput();
+        this._appendLine(`$ bin/console ${cmd.command} ${Object.entries(options).map(([k,v]) => v === true ? k : `${k}=${v}`).filter(x => !x.endsWith('=false')).join(' ')}`, 'info', true);
+
+        try {
+            const res = await fetch(this._endpoint + '/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: cmd.command, options }),
+            });
+
+            if (!res.ok) {
+                const err = await res.text();
+                this._appendLine(`HTTP ${res.status}: ${err}`, 'error');
+                this._setDone();
+                return;
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const data = JSON.parse(line);
+                        if (data.type === 'complete') {
+                            const ok = data.exitCode === 0 || data.exitCode === undefined;
+                            this._appendLine(
+                                `[${ok ? 'OK' : 'FAIL'}] exit=${data.exitCode ?? 0} duration=${data.duration || '?'}`,
+                                ok ? 'success' : 'error', true
+                            );
+                        } else if (data.type === 'batch') {
+                            this._appendLine(
+                                `[batch ${data.batch}] processed=${data.processed} errors=${data.errors || 0}`,
+                                'batch'
+                            );
+                        } else {
+                            this._appendLine(data.text || JSON.stringify(data), 'info');
+                        }
+                    } catch {
+                        this._appendLine(line, 'info');
+                    }
+                }
+            }
+        } catch (err) {
+            this._appendLine(`Error: ${err.message}`, 'error');
+        }
+
+        this._setDone();
+    }
+
+    _setDone() {
+        this._running = false;
+        this._runBtn.textContent = 'Run';
+        this._runBtn.disabled = false;
     }
 
     _esc(str) {
@@ -228,11 +246,9 @@ class SymfonyCommand extends HTMLElement {
     connectedCallback() {
         const commandsAttr = this.getAttribute('commands');
         if (commandsAttr) {
-            // Static mode: commands provided as attribute
             this._commands = JSON.parse(commandsAttr);
             this._render();
         } else {
-            // Auto-discovery mode: fetch from backend
             this._showLoading();
             const endpoint = this.getAttribute('endpoint') || '/api/console';
             fetch(endpoint + '/commands')
@@ -262,119 +278,19 @@ class SymfonyCommand extends HTMLElement {
     }
 
     _render() {
-        const commands = this._commands || this._parseCommands();
+        const commands = this._commands || [];
         const endpoint = this.getAttribute('endpoint') || '/api/console';
 
         this.shadowRoot.innerHTML = `
             <style>${SymfonyCommand.STYLES}</style>
-            <div class="wrapper">
-                <div class="form-container"></div>
-                <div class="output-container"></div>
-            </div>
+            <div class="wrapper"></div>
         `;
 
-        this._output = new CommandOutput(this.shadowRoot.querySelector('.output-container'));
-        this._form = new CommandForm(
-            this.shadowRoot.querySelector('.form-container'),
-            commands,
-            (cmd, options) => this._executeCommand(endpoint, cmd, options)
-        );
-    }
-
-    _parseCommands() {
-        try {
-            return JSON.parse(this.getAttribute('commands') || '[]');
-        } catch {
-            return [];
-        }
-    }
-
-    async _executeCommand(endpoint, cmd, options) {
-        this._form.setStatus('running');
-        this._output.clear();
-        this._output.appendLine(`$ bin/console ${cmd.command} ${Object.entries(options).map(([k,v]) => v === true ? k : `${k}=${v}`).filter(x => !x.endsWith('=false')).join(' ')}`, 'info', true);
-
-        this.dispatchEvent(new CustomEvent('command-started', {
-            detail: { command: cmd.command, options }
-        }));
-
-        try {
-            const res = await fetch(endpoint + '/execute', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ command: cmd.command, options }),
-            });
-
-            if (!res.ok) {
-                const err = await res.text();
-                this._output.appendLine(`HTTP ${res.status}: ${err}`, 'error');
-                this._form.setStatus('error');
-                this.dispatchEvent(new CustomEvent('command-error', {
-                    detail: { command: cmd.command, error: err }
-                }));
-                return;
-            }
-
-            // NDJSON streaming
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let lastComplete = null;
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop();
-
-                for (const line of lines) {
-                    if (!line.trim()) continue;
-                    try {
-                        const data = JSON.parse(line);
-                        if (data.type === 'complete') {
-                            lastComplete = data;
-                            const ok = data.exitCode === 0 || data.exitCode === undefined;
-                            const icon = ok ? 'OK' : 'FAIL';
-                            this._output.appendLine(
-                                `[${icon}] exit=${data.exitCode ?? 0} duration=${data.duration || '?'}`,
-                                ok ? 'success' : 'error',
-                                true
-                            );
-                        } else if (data.type === 'batch') {
-                            this._output.appendLine(
-                                `[batch ${data.batch}] processed=${data.processed} errors=${data.errors || 0}`,
-                                'batch'
-                            );
-                        } else {
-                            this._output.appendLine(data.text || JSON.stringify(data), 'info');
-                        }
-                    } catch {
-                        this._output.appendLine(line, 'info');
-                    }
-                }
-            }
-
-            this._form.setStatus('done');
-            this.dispatchEvent(new CustomEvent('command-completed', {
-                detail: {
-                    command: cmd.command,
-                    exitCode: lastComplete?.exitCode ?? 0,
-                    duration: lastComplete?.duration,
-                }
-            }));
-        } catch (err) {
-            this._output.appendLine(`Error: ${err.message}`, 'error');
-            this._form.setStatus('error');
-            this.dispatchEvent(new CustomEvent('command-error', {
-                detail: { command: cmd.command, error: err.message }
-            }));
-        }
+        const wrapper = this.shadowRoot.querySelector('.wrapper');
+        commands.forEach(cmd => new CommandCard(wrapper, cmd, endpoint));
     }
 }
 
-// CSS — customizable via --cmd-* properties
 SymfonyCommand.STYLES = `
     :host {
         display: block;
@@ -393,46 +309,46 @@ SymfonyCommand.STYLES = `
     .wrapper {
         font-family: var(--cmd-font);
         color: var(--cmd-text);
-        background: var(--cmd-bg);
-        border-radius: var(--cmd-radius);
-        border: 1px solid var(--cmd-border);
-        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
     }
 
-    /* === FORM === */
-    .form-area {
+    /* === CARD === */
+    .card {
         background: var(--cmd-surface);
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--cmd-border);
-    }
-    .cmd-tabs {
-        display: flex;
-        gap: 4px;
-        margin-bottom: 12px;
-    }
-    .cmd-tab {
-        padding: 6px 14px;
-        background: transparent;
-        color: var(--cmd-info);
         border: 1px solid var(--cmd-border);
         border-radius: var(--cmd-radius);
-        cursor: pointer;
-        font-family: var(--cmd-font);
-        font-size: 12px;
-        transition: all 0.15s;
+        overflow: hidden;
     }
-    .cmd-tab:hover { color: var(--cmd-text); border-color: var(--cmd-accent); }
-    .cmd-tab.active {
-        background: var(--cmd-accent);
-        color: var(--cmd-bg);
-        border-color: var(--cmd-accent);
+    .card-header {
+        padding: 12px 16px 8px;
     }
-    .cmd-options {
+    .card-title {
+        font-size: 13px;
+        color: var(--cmd-accent);
+        font-weight: 600;
+    }
+    .card-desc {
+        font-size: 11px;
+        color: var(--cmd-info);
+        margin-top: 2px;
+    }
+    .card-options {
+        padding: 0 16px 8px;
         display: flex;
         flex-wrap: wrap;
         gap: 10px;
         align-items: center;
     }
+    .card-actions {
+        padding: 0 16px 10px;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+
+    /* === OPTIONS === */
     .opt-check, .opt-select, .opt-input {
         display: flex;
         align-items: center;
@@ -453,55 +369,39 @@ SymfonyCommand.STYLES = `
     select:focus, input[type="text"]:focus {
         outline: 1px solid var(--cmd-accent);
     }
-    .cmd-actions {
-        margin-top: 12px;
-    }
+
+    /* === BUTTONS === */
     .run-btn {
-        padding: 8px 24px;
+        padding: 6px 18px;
         background: var(--cmd-accent);
         color: var(--cmd-bg);
         border: none;
         border-radius: var(--cmd-radius);
         cursor: pointer;
         font-family: var(--cmd-font);
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 600;
         transition: opacity 0.15s;
     }
     .run-btn:hover { opacity: 0.85; }
     .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    /* === TERMINAL === */
-    .terminal {
-        background: var(--cmd-bg);
-    }
-    .terminal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 16px;
-        border-bottom: 1px solid var(--cmd-border);
-    }
-    .terminal-title {
-        font-size: 11px;
-        color: var(--cmd-info);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-    .terminal-actions { display: flex; gap: 6px; }
-    .copy-btn, .clear-btn {
+    .action-btn {
         background: transparent;
         color: var(--cmd-info);
         border: 1px solid var(--cmd-border);
         border-radius: 4px;
-        padding: 2px 10px;
+        padding: 4px 12px;
         font-size: 11px;
         cursor: pointer;
         font-family: var(--cmd-font);
     }
-    .copy-btn:hover, .clear-btn:hover { color: var(--cmd-text); border-color: var(--cmd-accent); }
-    .output {
-        max-height: 400px;
+    .action-btn:hover { color: var(--cmd-text); border-color: var(--cmd-accent); }
+
+    /* === OUTPUT === */
+    .card-output {
+        background: var(--cmd-bg);
+        border-top: 1px solid var(--cmd-border);
+        max-height: 300px;
         overflow-y: auto;
         padding: 8px 16px;
         font-size: 12px;
@@ -510,8 +410,9 @@ SymfonyCommand.STYLES = `
     .empty {
         color: var(--cmd-info);
         font-style: italic;
-        padding: 20px 0;
+        padding: 8px 0;
         text-align: center;
+        font-size: 11px;
     }
     .line {
         white-space: pre-wrap;
