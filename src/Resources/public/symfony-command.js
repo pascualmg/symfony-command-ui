@@ -287,7 +287,68 @@ class SymfonyCommand extends HTMLElement {
         `;
 
         const wrapper = this.shadowRoot.querySelector('.wrapper');
-        commands.forEach(cmd => new CommandCard(wrapper, cmd, endpoint));
+        const tree = this._buildTree(commands);
+        this._renderTree(wrapper, tree, endpoint);
+    }
+
+    /**
+     * Convert a flat list of commands to a nested tree based on the ':' separator.
+     *
+     * Input:  [{command: "app:collectives:stats"}, {command: "app:collectives:campaign:create"}, ...]
+     * Output: { children: { app: { children: { collectives: { leaves: [...], children: { campaign: {...} } } } } } }
+     *
+     * Any prefix shared by ALL commands is collapsed (no redundant wrapper).
+     */
+    _buildTree(commands) {
+        const root = { leaves: [], children: {} };
+
+        for (const cmd of commands) {
+            const parts = cmd.command.split(':');
+            let node = root;
+            for (let i = 0; i < parts.length - 1; i++) {
+                const part = parts[i];
+                if (!node.children[part]) {
+                    node.children[part] = { leaves: [], children: {} };
+                }
+                node = node.children[part];
+            }
+            node.leaves.push(cmd);
+        }
+
+        // Collapse single-child chains from the root (e.g. "app" wrapping everything)
+        let collapsed = root;
+        while (
+            collapsed.leaves.length === 0 &&
+            Object.keys(collapsed.children).length === 1
+        ) {
+            collapsed = Object.values(collapsed.children)[0];
+        }
+        return collapsed;
+    }
+
+    _renderTree(container, node, endpoint, depth = 0) {
+        // Leaves first (commands that belong directly to this level)
+        for (const cmd of node.leaves) {
+            new CommandCard(container, cmd, endpoint);
+        }
+
+        // Then groups (nested namespaces)
+        for (const [name, child] of Object.entries(node.children)) {
+            const group = document.createElement('div');
+            group.className = 'group group-depth-' + Math.min(depth, 3);
+
+            const header = document.createElement('div');
+            header.className = 'group-header';
+            header.textContent = name;
+            group.appendChild(header);
+
+            const body = document.createElement('div');
+            body.className = 'group-body';
+            group.appendChild(body);
+
+            container.appendChild(group);
+            this._renderTree(body, child, endpoint, depth + 1);
+        }
     }
 }
 
@@ -313,6 +374,32 @@ SymfonyCommand.STYLES = `
         flex-direction: column;
         gap: 12px;
     }
+
+    /* === GROUP (namespace container) === */
+    .group {
+        border: 1px solid var(--cmd-border);
+        border-radius: var(--cmd-radius);
+        background: rgba(255,255,255,0.015);
+    }
+    .group-header {
+        padding: 8px 14px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--cmd-accent);
+        border-bottom: 1px solid var(--cmd-border);
+        background: rgba(255,255,255,0.025);
+        font-weight: 600;
+    }
+    .group-body {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .group-depth-0 > .group-header { font-size: 13px; }
+    .group-depth-1 > .group-header { color: var(--cmd-batch); }
+    .group-depth-2 > .group-header { color: var(--cmd-info); font-size: 10px; }
 
     /* === CARD === */
     .card {
