@@ -97,7 +97,7 @@ HTML;
      *
      * @Route("/asset/symfony-command.js", methods={"GET"}, name="symfony_command_ui_asset")
      */
-    public function asset(): Response
+    public function asset(Request $request): Response
     {
         $jsPath = \dirname(__DIR__).'/Resources/public/symfony-command.js';
 
@@ -105,14 +105,21 @@ HTML;
             return new Response('Asset not found', Response::HTTP_NOT_FOUND);
         }
 
-        return new Response(
-            \file_get_contents($jsPath),
+        $content = \file_get_contents($jsPath);
+        $etag = '"'.\md5($content).'"';
+
+        $response = new Response(
+            $content,
             Response::HTTP_OK,
             [
                 'Content-Type' => 'application/javascript',
-                'Cache-Control' => 'public, max-age=3600',
+                'Cache-Control' => 'no-cache',
+                'ETag' => $etag,
             ]
         );
+        $response->isNotModified($request);
+
+        return $response;
     }
 
     /**
