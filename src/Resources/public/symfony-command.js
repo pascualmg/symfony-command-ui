@@ -32,11 +32,14 @@ class CommandCard {
         const card = document.createElement('div');
         card.className = 'card';
 
-        // Header
+        // Header — last ':' segment as big title, full command as small subtitle
+        const parts = cmd.command.split(':');
+        const shortName = parts[parts.length - 1];
         const header = document.createElement('div');
         header.className = 'card-header';
         header.innerHTML = `
-            <div class="card-title">${this._esc(cmd.command)}</div>
+            <div class="card-title">${this._esc(shortName)}</div>
+            <div class="card-fullname">${this._esc(cmd.command)}</div>
             <div class="card-desc">${this._esc(cmd.label)}</div>
         `;
         card.appendChild(header);
@@ -57,9 +60,17 @@ class CommandCard {
         this._runBtn.addEventListener('click', () => this._execute());
         actions.appendChild(this._runBtn);
 
+        this._copyCliBtn = document.createElement('button');
+        this._copyCliBtn.className = 'action-btn';
+        this._copyCliBtn.textContent = 'Copy CLI';
+        this._copyCliBtn.title = 'Copy shell command to run it in your terminal';
+        this._copyCliBtn.addEventListener('click', () => this._copyCli());
+        actions.appendChild(this._copyCliBtn);
+
         this._copyBtn = document.createElement('button');
         this._copyBtn.className = 'action-btn';
         this._copyBtn.textContent = 'Copy';
+        this._copyBtn.title = 'Copy command output';
         this._copyBtn.addEventListener('click', () => this._copy());
         actions.appendChild(this._copyBtn);
 
@@ -148,6 +159,32 @@ class CommandCard {
             this._copyBtn.textContent = 'Copied!';
             setTimeout(() => { this._copyBtn.textContent = 'Copy'; }, 1500);
         });
+    }
+
+    _copyCli() {
+        const options = this._collectOptions();
+        const parts = ['php bin/console', this._cmd.command];
+        for (const [key, value] of Object.entries(options)) {
+            if (value === true) {
+                parts.push(key);
+            } else if (value === false || value === '' || value == null) {
+                continue;
+            } else if (key.startsWith('-')) {
+                parts.push(`${key}=${this._shellQuote(String(value))}`);
+            } else {
+                parts.push(this._shellQuote(String(value)));
+            }
+        }
+        const line = parts.join(' ');
+        navigator.clipboard.writeText(line).then(() => {
+            this._copyCliBtn.textContent = 'Copied!';
+            setTimeout(() => { this._copyCliBtn.textContent = 'Copy CLI'; }, 1500);
+        });
+    }
+
+    _shellQuote(v) {
+        if (/^[A-Za-z0-9_./:=-]+$/.test(v)) return v;
+        return "'" + v.replace(/'/g, "'\\''") + "'";
     }
 
     async _execute() {
@@ -240,7 +277,7 @@ class SymfonyCommand extends HTMLElement {
     }
 
     static get observedAttributes() {
-        return ['commands', 'endpoint'];
+        return ['commands', 'endpoint', 'collapsed-by-default'];
     }
 
     connectedCallback() {
@@ -294,16 +331,26 @@ class SymfonyCommand extends HTMLElement {
     /**
      * Convert a flat list of commands to a nested tree based on the ':' separator.
      *
-     * Input:  [{command: "app:collectives:stats"}, {command: "app:collectives:campaign:create"}, ...]
-     * Output: { children: { app: { children: { collectives: { leaves: [...], children: { campaign: {...} } } } } } }
-     *
-     * Any prefix shared by ALL commands is collapsed (no redundant wrapper).
+     * Input:  [{command: "foo:bar:baz"}, {command: "foo:bar:qux:do"}, ...]
+     * Output: nested { leaves, children } where each ':' segment becomes a level.
      */
     _buildTree(commands) {
         const root = { leaves: [], children: {} };
+        const CORE_GROUP = '(core)';
 
         for (const cmd of commands) {
             const parts = cmd.command.split(':');
+
+            // Single-segment commands (e.g. "about", "help") get bucketed
+            // under a synthetic group so they don't float at the top.
+            if (parts.length === 1) {
+                if (!root.children[CORE_GROUP]) {
+                    root.children[CORE_GROUP] = { leaves: [], children: {}, collapsedByDefault: true };
+                }
+                root.children[CORE_GROUP].leaves.push(cmd);
+                continue;
+            }
+
             let node = root;
             for (let i = 0; i < parts.length - 1; i++) {
                 const part = parts[i];
@@ -315,15 +362,7 @@ class SymfonyCommand extends HTMLElement {
             node.leaves.push(cmd);
         }
 
-        // Collapse single-child chains from the root (e.g. "app" wrapping everything)
-        let collapsed = root;
-        while (
-            collapsed.leaves.length === 0 &&
-            Object.keys(collapsed.children).length === 1
-        ) {
-            collapsed = Object.values(collapsed.children)[0];
-        }
-        return collapsed;
+        return root;
     }
 
     _renderTree(container, node, endpoint, depth = 0) {
@@ -335,19 +374,32 @@ class SymfonyCommand extends HTMLElement {
         // Then groups (nested namespaces)
         for (const [name, child] of Object.entries(node.children)) {
             const group = document.createElement('div');
-            group.className = 'group group-depth-' + Math.min(depth, 3);
+            group.className = 'group';
+            group.style.setProperty('--depth', String(depth));
 
-            const header = document.createElement('div');
+            const header = document.createElement('button');
             header.className = 'group-header';
-            header.textContent = name;
+            header.type = 'button';
+            header.innerHTML = '<span class="group-caret">▾</span><span class="group-name">' + name + '</span>';
             group.appendChild(header);
 
             const body = document.createElement('div');
             body.className = 'group-body';
             group.appendChild(body);
 
+            header.addEventListener('click', () => {
+                const collapsed = group.classList.toggle('collapsed');
+                body.style.display = collapsed ? 'none' : '';
+            });
+
             container.appendChild(group);
             this._renderTree(body, child, endpoint, depth + 1);
+
+            const globalCollapse = this.getAttribute('collapsed-by-default') !== 'false';
+            if (child.collapsedByDefault || globalCollapse) {
+                group.classList.add('collapsed');
+                body.style.display = 'none';
+            }
         }
     }
 }
@@ -382,24 +434,46 @@ SymfonyCommand.STYLES = `
         background: rgba(255,255,255,0.015);
     }
     .group-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
         padding: 8px 14px;
         font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 0.1em;
         color: var(--cmd-accent);
+        border: 0;
         border-bottom: 1px solid var(--cmd-border);
         background: rgba(255,255,255,0.025);
         font-weight: 600;
+        font-family: inherit;
+        text-align: left;
+        cursor: pointer;
+        user-select: none;
     }
+    .group-header:hover { background: rgba(255,255,255,0.05); }
+    .group-caret {
+        display: inline-block;
+        transition: transform 0.15s ease;
+        font-size: 10px;
+        opacity: 0.7;
+    }
+    .group.collapsed > .group-header { border-bottom-color: transparent; }
+    .group.collapsed .group-caret { transform: rotate(-90deg); }
     .group-body {
         padding: 10px;
         display: flex;
         flex-direction: column;
         gap: 10px;
     }
-    .group-depth-0 > .group-header { font-size: 13px; }
-    .group-depth-1 > .group-header { color: var(--cmd-batch); }
-    .group-depth-2 > .group-header { color: var(--cmd-info); font-size: 10px; }
+    /* Font shrinks and hue rotates with depth — scales to any N */
+    .group > .group-header {
+        font-size: max(9px, calc(13px - var(--depth, 0) * 1px));
+    }
+    .group > .group-header > .group-name {
+        filter: hue-rotate(calc(var(--depth, 0) * 35deg));
+    }
 
     /* === CARD === */
     .card {
@@ -412,9 +486,18 @@ SymfonyCommand.STYLES = `
         padding: 12px 16px 8px;
     }
     .card-title {
-        font-size: 13px;
+        font-size: 18px;
         color: var(--cmd-accent);
-        font-weight: 600;
+        font-weight: 700;
+        font-family: 'JetBrains Mono', monospace;
+        letter-spacing: -0.01em;
+    }
+    .card-fullname {
+        font-size: 11px;
+        color: var(--cmd-info);
+        opacity: 0.65;
+        margin-top: 2px;
+        font-family: 'JetBrains Mono', monospace;
     }
     .card-desc {
         font-size: 11px;
