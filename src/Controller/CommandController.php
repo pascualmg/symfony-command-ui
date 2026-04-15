@@ -32,20 +32,74 @@ class CommandController
     private const TIMEOUT_SECONDS = 60;
 
     private string $projectDir;
+    private bool $thisIsReallyDangerous;
+    private bool $exposeAll;
     private array $allowedCommands;
+    private array $allowedNamespaces;
+    private array $excludedCommands;
+    private array $excludedNamespaces;
     private array $configOverrides;
     private string $routePrefix;
+    private bool $collapsedByDefault;
 
     public function __construct(
         string $projectDir,
+        bool $thisIsReallyDangerous,
+        bool $exposeAll,
         array $allowedCommands,
+        array $allowedNamespaces,
+        array $excludedCommands,
+        array $excludedNamespaces,
         array $configOverrides,
-        string $routePrefix
+        string $routePrefix,
+        bool $collapsedByDefault
     ) {
         $this->projectDir = $projectDir;
+        $this->thisIsReallyDangerous = $thisIsReallyDangerous;
+        $this->exposeAll = $exposeAll;
         $this->allowedCommands = $allowedCommands;
+        $this->allowedNamespaces = $allowedNamespaces;
+        $this->excludedCommands = $excludedCommands;
+        $this->excludedNamespaces = $excludedNamespaces;
         $this->configOverrides = $configOverrides;
         $this->routePrefix = $routePrefix;
+        $this->collapsedByDefault = $collapsedByDefault;
+    }
+
+    /**
+     * Decides whether a command name passes the current allow/deny rules.
+     *
+     * Order: this_is_really_dangerous bypasses everything. Otherwise explicit
+     * deny wins, then expose_all, then allowed_commands exact, then
+     * allowed_namespaces prefix. No match → denied.
+     */
+    private function isCommandAllowed(string $name): bool
+    {
+        if ($this->thisIsReallyDangerous) {
+            return true;
+        }
+        if (\in_array($name, $this->excludedCommands, true)) {
+            return false;
+        }
+        foreach ($this->excludedNamespaces as $prefix) {
+            if ('' !== $prefix && 0 === \strpos($name, $prefix)) {
+                return false;
+            }
+        }
+
+        if ($this->exposeAll) {
+            return true;
+        }
+        if (\in_array($name, $this->allowedCommands, true)) {
+            return true;
+        }
+        foreach ($this->allowedNamespaces as $prefix) {
+            if ('' !== $prefix && 0 === \strpos($name, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -57,6 +111,7 @@ class CommandController
     public function page(): Response
     {
         $prefix = \rtrim($this->routePrefix, '/');
+        $collapsed = $this->collapsedByDefault ? 'true' : 'false';
 
         $html = <<<HTML
 <!DOCTYPE html>
@@ -84,7 +139,7 @@ class CommandController
 </head>
 <body>
     <h1>$ symfony console</h1>
-    <symfony-command endpoint="{$prefix}"></symfony-command>
+    <symfony-command endpoint="{$prefix}" collapsed-by-default="{$collapsed}"></symfony-command>
 </body>
 </html>
 HTML;
@@ -159,12 +214,11 @@ HTML;
             return new JsonResponse(['error' => 'Invalid command list output'], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
-        $allowedMap = \array_flip($this->allowedCommands);
         $result = [];
 
         foreach ($allCommands['commands'] ?? [] as $cmd) {
             $name = $cmd['name'] ?? '';
-            if (!isset($allowedMap[$name])) {
+            if ('' === $name || !$this->isCommandAllowed($name)) {
                 continue;
             }
 
@@ -227,7 +281,7 @@ HTML;
         $command = $body['command'] ?? '';
         $options = $body['options'] ?? [];
 
-        if (!\in_array($command, $this->allowedCommands, true)) {
+        if ('' === $command || !$this->isCommandAllowed($command)) {
             return new JsonResponse(
                 ['error' => \sprintf('Command not allowed: %s', $command)],
                 Response::HTTP_FORBIDDEN
