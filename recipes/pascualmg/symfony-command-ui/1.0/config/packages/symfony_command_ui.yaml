@@ -1,0 +1,19 @@
+symfony_command_ui:
+    route_prefix: /symfony-console
+    # Choose ONE mode:
+    #
+    # Mode 1 — Whitelist (safest, default):
+    # allowed_commands:
+    #     - app:my:command
+    #
+    # Mode 2 — Namespace prefix:
+    # allowed_namespaces:
+    #     - 'app:'
+    #
+    # Mode 3 — Everything (dev only):
+    # expose_all: true
+    #
+    # Nuclear (bypasses blacklist too):
+    # this_is_really_dangerous: true
+
+    collapsed_by_default: true
