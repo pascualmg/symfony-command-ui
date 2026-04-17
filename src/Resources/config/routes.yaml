@@ -1,0 +1,19 @@
+symfony_command_ui_page:
+    path: /
+    controller: Pascualmg\SymfonyCommandUI\Controller\CommandController::page
+    methods: [GET]
+
+symfony_command_ui_asset:
+    path: /asset/symfony-command.js
+    controller: Pascualmg\SymfonyCommandUI\Controller\CommandController::asset
+    methods: [GET]
+
+symfony_command_ui_commands:
+    path: /commands
+    controller: Pascualmg\SymfonyCommandUI\Controller\CommandController::commands
+    methods: [GET]
+
+symfony_command_ui_execute:
+    path: /execute
+    controller: Pascualmg\SymfonyCommandUI\Controller\CommandController::execute
+    methods: [POST]
