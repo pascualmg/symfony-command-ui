@@ -31,16 +31,26 @@ class CommandController
 {
     private const TIMEOUT_SECONDS = 60;
 
-    private string $projectDir;
-    private bool $thisIsReallyDangerous;
-    private bool $exposeAll;
-    private array $allowedCommands;
-    private array $allowedNamespaces;
-    private array $excludedCommands;
-    private array $excludedNamespaces;
-    private array $configOverrides;
-    private string $routePrefix;
-    private bool $collapsedByDefault;
+    /** @var string */
+    private $projectDir;
+    /** @var bool */
+    private $thisIsReallyDangerous;
+    /** @var bool */
+    private $exposeAll;
+    /** @var array */
+    private $allowedCommands;
+    /** @var array */
+    private $allowedNamespaces;
+    /** @var array */
+    private $excludedCommands;
+    /** @var array */
+    private $excludedNamespaces;
+    /** @var array */
+    private $configOverrides;
+    /** @var string */
+    private $routePrefix;
+    /** @var bool */
+    private $collapsedByDefault;
 
     public function __construct(
         string $projectDir,

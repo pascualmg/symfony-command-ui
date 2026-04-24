@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    name: composer validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+      - run: composer validate --strict
+
+  lint:
+    name: php -l / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.1', '7.2', '7.3', '7.4', '8.0', '8.1', '8.2', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+      - name: Lint src/
+        run: find src -name "*.php" -print0 | xargs -0 -n1 php -l
+
+  install:
+    name: install / PHP ${{ matrix.php }} + Symfony ${{ matrix.symfony }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { php: '7.1', symfony: '3.4.*' }
+          - { php: '7.2', symfony: '4.4.*' }
+          - { php: '7.4', symfony: '5.4.*' }
+          - { php: '8.1', symfony: '6.4.*' }
+          - { php: '8.2', symfony: '7.0.*' }
+          - { php: '8.3', symfony: '7.4.*' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:v2
+          coverage: none
+      - name: Create test app
+        run: |
+          mkdir /tmp/testapp && cd /tmp/testapp
+          composer init --no-interaction \
+            --name=test/app \
+            --stability=stable \
+            --require="symfony/framework-bundle:${{ matrix.symfony }}"
+      - name: Add local bundle as path repository
+        working-directory: /tmp/testapp
+        run: |
+          composer config repositories.local path ${{ github.workspace }}
+          composer config minimum-stability dev
+          composer config prefer-stable true
+      - name: Require bundle
+        working-directory: /tmp/testapp
+        run: composer require "pascualmg/symfony-command-ui:*@dev" --no-scripts -W
