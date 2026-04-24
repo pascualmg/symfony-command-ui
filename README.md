@@ -1,8 +1,12 @@
 # symfony-command-ui
 
+[![CI](https://github.com/pascualmg/symfony-command-ui/actions/workflows/ci.yml/badge.svg)](https://github.com/pascualmg/symfony-command-ui/actions/workflows/ci.yml)
+[![Latest Version](https://img.shields.io/packagist/v/pascualmg/symfony-command-ui.svg)](https://packagist.org/packages/pascualmg/symfony-command-ui)
+[![License](https://img.shields.io/packagist/l/pascualmg/symfony-command-ui.svg)](LICENSE)
+
 **Web UI + API to execute Symfony console commands from the browser — or from any AI agent.**
 
-Drop this bundle into any Symfony project (5.4, 6.x, 7.x) and get:
+Drop this bundle into any Symfony project (3.4 through 8.x, PHP 7.1+) and get:
 
 - A **web dashboard** with independent cards for each command (form + terminal)
 - **Real-time streaming** output via NDJSON protocol
@@ -431,9 +435,25 @@ symfony_command_ui:
 
 ## Requirements
 
-- PHP >= 7.4
-- Symfony 5.4, 6.x, or 7.x
-- `symfony/process` component (included in most Symfony installs)
+- **PHP**: 7.1 through 8.3 (tested against every minor)
+- **Symfony**: 3.4, 4.4, 5.4, 6.x, 7.x, 8.x
+
+### Supported matrix
+
+Every combination below is exercised by CI (install in a real Symfony skeleton):
+
+| PHP  | Symfony | Status |
+|------|---------|:-:|
+| 7.1  | 3.4     | ✓ |
+| 7.2  | 4.4     | ✓ |
+| 7.4  | 5.4     | ✓ |
+| 8.1  | 6.4     | ✓ |
+| 8.2  | 7.0     | ✓ |
+| 8.3  | 7.4     | ✓ |
+
+Plus `php -l` on PHP 7.1, 7.2, 7.3, 7.4, 8.0, 8.1, 8.2, 8.3.
+
+The bundle has **zero runtime dependencies beyond `symfony/framework-bundle`, `symfony/process`, `symfony/http-foundation`, and `symfony/routing`** — all stable APIs since Symfony 3.x.
 
 ## License
 
