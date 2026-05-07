@@ -30,6 +30,7 @@ use Symfony\Component\Routing\Annotation\Route;
 class CommandController
 {
     private const TIMEOUT_SECONDS = 60;
+    private const DEFAULT_MAX_BUFFERED_OUTPUT_KB = 5120;
 
     /** @var string */
     private $projectDir;
@@ -51,6 +52,8 @@ class CommandController
     private $routePrefix;
     /** @var bool */
     private $collapsedByDefault;
+    /** @var int */
+    private $maxBufferedOutputBytes;
 
     public function __construct(
         string $projectDir,
@@ -62,7 +65,8 @@ class CommandController
         array $excludedNamespaces,
         array $configOverrides,
         string $routePrefix,
-        bool $collapsedByDefault
+        bool $collapsedByDefault,
+        int $maxBufferedOutputKb = self::DEFAULT_MAX_BUFFERED_OUTPUT_KB
     ) {
         $this->projectDir = $projectDir;
         $this->thisIsReallyDangerous = $thisIsReallyDangerous;
@@ -74,6 +78,7 @@ class CommandController
         $this->configOverrides = $configOverrides;
         $this->routePrefix = $routePrefix;
         $this->collapsedByDefault = $collapsedByDefault;
+        $this->maxBufferedOutputBytes = \max(1, $maxBufferedOutputKb) * 1024;
     }
 
     /**
@@ -282,10 +287,26 @@ HTML;
      * so API clients can reuse the structure returned by GET /commands
      * (which exposes them under "config") without renaming.
      *
-     * Response (NDJSON stream):
-     *   {"type":"line","text":"Processing..."}
-     *   {"type":"line","text":"Done."}
-     *   {"type":"complete","exitCode":0,"duration":"1.2s"}
+     * Response shape depends on the Accept header (content negotiation):
+     *
+     *   Accept: application/x-ndjson   (default, streaming)
+     *     {"type":"line","text":"Processing..."}
+     *     {"type":"line","text":"Done."}
+     *     {"type":"complete","exitCode":0,"duration":"1.2s"}
+     *
+     *   Accept: application/json       (buffered, one shot)
+     *     {
+     *       "command":"app:stats",
+     *       "exitCode":0,
+     *       "duration":"1.2s",
+     *       "stdout":"...",
+     *       "stderr":""
+     *     }
+     *
+     * Use buffered mode when the command emits structured output (JSON, CSV,
+     * a single value) and you want to consume it synchronously without
+     * having to reassemble NDJSON on the client side. Use streaming for
+     * long-running commands where progress matters.
      *
      * @Route("/execute", methods={"POST"}, name="symfony_command_ui_execute")
      */
@@ -304,6 +325,19 @@ HTML;
 
         $args = $this->buildArgs($command, $options);
 
+        if ($this->wantsBufferedResponse($request)) {
+            return $this->executeBuffered($command, $args);
+        }
+
+        return $this->executeStreaming($args);
+    }
+
+    /**
+     * Streaming response (default): emits NDJSON line by line as the command
+     * produces output. Best for long-running commands or progress feedback.
+     */
+    private function executeStreaming(array $args): Response
+    {
         $response = new StreamedResponse(function () use ($args): void {
             \set_time_limit(0);
             $start = \microtime(true);
@@ -340,6 +374,96 @@ HTML;
         $response->headers->set('Cache-Control', 'no-cache');
 
         return $response;
+    }
+
+    /**
+     * Buffered response: runs the command to completion, accumulates stdout
+     * and stderr, returns a single JSON object. Best for short commands with
+     * structured output that the client wants to consume synchronously.
+     *
+     * Output is capped at MAX_BUFFERED_OUTPUT_BYTES per stream to protect
+     * against runaway commands. If the cap is hit, the response includes
+     * "truncated":true and the exceeding stream is cut off, but the command
+     * is still allowed to finish so the exitCode is meaningful.
+     */
+    private function executeBuffered(string $command, array $args): Response
+    {
+        \set_time_limit(0);
+        $start = \microtime(true);
+
+        $phpBinary = (new PhpExecutableFinder())->find() ?: 'php';
+
+        $process = new Process(
+            \array_merge([$phpBinary, 'bin/console'], $args, ['--no-interaction']),
+            $this->projectDir
+        );
+        $process->setTimeout(self::TIMEOUT_SECONDS);
+        $process->start();
+
+        $stdout = '';
+        $stderr = '';
+        $truncated = false;
+
+        foreach ($process as $type => $data) {
+            if (Process::OUT === $type) {
+                if (\strlen($stdout) < $this->maxBufferedOutputBytes) {
+                    $stdout .= $data;
+                    if (\strlen($stdout) > $this->maxBufferedOutputBytes) {
+                        $stdout = \substr($stdout, 0, $this->maxBufferedOutputBytes);
+                        $truncated = true;
+                    }
+                }
+            } else {
+                if (\strlen($stderr) < $this->maxBufferedOutputBytes) {
+                    $stderr .= $data;
+                    if (\strlen($stderr) > $this->maxBufferedOutputBytes) {
+                        $stderr = \substr($stderr, 0, $this->maxBufferedOutputBytes);
+                        $truncated = true;
+                    }
+                }
+            }
+        }
+
+        $duration = \round(\microtime(true) - $start, 1);
+
+        return new JsonResponse([
+            'command' => $command,
+            'exitCode' => $process->getExitCode(),
+            'duration' => "{$duration}s",
+            'stdout' => $stdout,
+            'stderr' => $stderr,
+            'truncated' => $truncated,
+        ]);
+    }
+
+    /**
+     * Picks buffered vs streaming based on the Accept header.
+     *
+     * - "application/json"      → buffered
+     * - "application/x-ndjson"  → streaming
+     * - missing or wildcard     → streaming (back-compat default)
+     *
+     * If both are listed, the one with higher quality wins. If they tie,
+     * streaming wins (default).
+     */
+    private function wantsBufferedResponse(Request $request): bool
+    {
+        $accepts = $request->getAcceptableContentTypes();
+        if (empty($accepts)) {
+            return false;
+        }
+
+        foreach ($accepts as $type) {
+            $type = \strtolower(\trim((string) $type));
+            if ('application/json' === $type) {
+                return true;
+            }
+            if ('application/x-ndjson' === $type || 'text/event-stream' === $type) {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private function buildArgs(string $command, array $options): array

@@ -230,6 +230,58 @@ The terminal renders each type with a different color:
 
 No WebSocket. No Server-Sent Events. Just `fetch()` + `ReadableStream` + `TextDecoder`. Works everywhere.
 
+### Buffered response mode (`Accept: application/json`)
+
+NDJSON streaming is great when you want to see progress in real time. But for short commands that emit structured output (a single JSON document, a CSV, a value), having to reassemble line-by-line on the client is friction. Since `v1.3.0` you can opt into a **buffered** response with content negotiation:
+
+```bash
+# Default: streaming NDJSON
+curl -X POST "$BASE/execute" \
+    -H "Content-Type: application/json" \
+    -d '{"command":"app:stats","config":{"--json":true}}'
+
+# Buffered: one shot, structured response
+curl -X POST "$BASE/execute" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d '{"command":"app:stats","config":{"--json":true}}'
+```
+
+Buffered response shape:
+
+```json
+{
+  "command": "app:stats",
+  "exitCode": 0,
+  "duration": "4.6s",
+  "stdout": "{\n    \"users\": 4532,\n    ...\n}\n",
+  "stderr": "",
+  "truncated": false
+}
+```
+
+Now the client can `jq -r .stdout | jq` and get the original JSON without rebuilding it from NDJSON fragments.
+
+**When to use which:**
+
+| Scenario | Mode | Why |
+|---|---|---|
+| Long-running commands (process, sync, consume) | streaming (default) | Live progress |
+| Short commands with JSON/structured output (`app:stats --json`, `app:user:show`) | buffered | One parse, no friction |
+| Chat ops where progress matters | streaming | Pipe lines to channel |
+| AI agent calling RPC-style tools | buffered | Single parse, atomic result |
+| Cache-clear, healthchecks, anything sub-second | either, buffered is shorter to consume | |
+
+Output is capped per stream by `max_buffered_output_kb` (default 5 MB). If a command emits more, the stream is truncated and the response carries `"truncated": true` — the command is still allowed to finish so `exitCode` is meaningful. Lower the cap on memory-constrained servers, raise it for export-style commands:
+
+```yaml
+# config/packages/symfony_command_ui.yaml
+symfony_command_ui:
+    max_buffered_output_kb: 51200  # 50 MB for big exports
+```
+
+Backwards compatible: clients that don't send `Accept` (or send `Accept: */*`, `application/x-ndjson`) keep getting NDJSON streaming, exactly as before.
+
 ### Card layout
 
 Each command renders as an **independent card**:
@@ -433,7 +485,7 @@ symfony_command_ui:
 | GET | `{prefix}/` | HTML page with `<symfony-command>` Web Component |
 | GET | `{prefix}/asset/symfony-command.js` | The Web Component JS file |
 | GET | `{prefix}/commands` | Auto-discovered command list (JSON) |
-| POST | `{prefix}/execute` | Execute a command (NDJSON stream) |
+| POST | `{prefix}/execute` | Execute a command. Returns NDJSON stream by default, or buffered JSON with `Accept: application/json` (since v1.3.0) |
 
 ---
 

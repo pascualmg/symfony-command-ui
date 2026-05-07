@@ -24,6 +24,7 @@ class SymfonyCommandUIExtension extends Extension
         $container->setParameter('symfony_command_ui.excluded_commands', $config['excluded_commands']);
         $container->setParameter('symfony_command_ui.excluded_namespaces', $config['excluded_namespaces']);
         $container->setParameter('symfony_command_ui.overrides', $config['overrides']);
+        $container->setParameter('symfony_command_ui.max_buffered_output_kb', $config['max_buffered_output_kb']);
 
         $container->register(CommandController::class)
             ->setPublic(true)
@@ -37,6 +38,7 @@ class SymfonyCommandUIExtension extends Extension
             ->setArgument('$excludedNamespaces', '%symfony_command_ui.excluded_namespaces%')
             ->setArgument('$configOverrides', '%symfony_command_ui.overrides%')
             ->setArgument('$routePrefix', '%symfony_command_ui.route_prefix%')
-            ->setArgument('$collapsedByDefault', '%symfony_command_ui.collapsed_by_default%');
+            ->setArgument('$collapsedByDefault', '%symfony_command_ui.collapsed_by_default%')
+            ->setArgument('$maxBufferedOutputKb', '%symfony_command_ui.max_buffered_output_kb%');
     }
 }

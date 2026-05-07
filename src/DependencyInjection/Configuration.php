@@ -82,6 +82,11 @@ class Configuration implements ConfigurationInterface
                     ->end()
                     ->defaultValue([])
                 ->end()
+                ->integerNode('max_buffered_output_kb')
+                    ->defaultValue(5120)
+                    ->min(1)
+                    ->info('Maximum stdout/stderr captured per stream when the client requests a buffered response (Accept: application/json). Output beyond this cap is truncated and the response carries "truncated":true. Default: 5 MB. Lower it on memory-constrained servers, raise it for export-style commands.')
+                ->end()
             ->end();
 
         return $treeBuilder;
