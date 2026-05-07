@@ -278,6 +278,10 @@ HTML;
      *   POST {prefix}/execute
      *   {"command": "app:example", "options": {"--verbose": true, "--limit": 100}}
      *
+     * The body accepts either "options" or "config" as the parameters key,
+     * so API clients can reuse the structure returned by GET /commands
+     * (which exposes them under "config") without renaming.
+     *
      * Response (NDJSON stream):
      *   {"type":"line","text":"Processing..."}
      *   {"type":"line","text":"Done."}
@@ -289,7 +293,7 @@ HTML;
     {
         $body = $this->decodeBody($request);
         $command = $body['command'] ?? '';
-        $options = $body['options'] ?? [];
+        $options = $body['options'] ?? $body['config'] ?? [];
 
         if ('' === $command || !$this->isCommandAllowed($command)) {
             return new JsonResponse(
