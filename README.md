@@ -6,12 +6,16 @@
 
 **Web UI + API to execute Symfony console commands from the browser — or from any AI agent.**
 
+![symfony-command-ui dashboard](https://raw.githubusercontent.com/pascualmg/symfony-command-ui/main/docs/screenshots/dashboard.png)
+
 Drop this bundle into any Symfony project (3.4 through 8.x, PHP 7.1+) and get:
 
 - A **web dashboard** with independent cards for each command (form + terminal)
 - **Real-time streaming** output via NDJSON protocol
 - **Auto-discovery** of commands from your `InputDefinition` — zero manual config
 - An **AI-ready API** that any LLM, agent, or MCP server can use to operate your app
+
+> Production-tested across multiple Symfony projects. The official Symfony Flex recipe was merged into [`symfony/recipes-contrib`](https://github.com/symfony/recipes-contrib/pull/1972) on May 5, 2026 — a single `composer require` is now all you need.
 
 ```
 composer require pascualmg/symfony-command-ui
@@ -454,6 +458,16 @@ Every combination below is exercised by CI (install in a real Symfony skeleton):
 Plus `php -l` on PHP 7.1, 7.2, 7.3, 7.4, 8.0, 8.1, 8.2, 8.3.
 
 The bundle has **zero runtime dependencies beyond `symfony/framework-bundle`, `symfony/process`, `symfony/http-foundation`, and `symfony/routing`** — all stable APIs since Symfony 3.x.
+
+## Contributing
+
+This bundle exists because I think the Symfony community needs it. If you agree, the best way to help is to use it, break it, and tell me what's missing.
+
+- **Bugs and questions** → [open an issue](https://github.com/pascualmg/symfony-command-ui/issues). No issue is too small. "I expected X, got Y" is enough.
+- **Pull requests** → very welcome. New filtering modes, new themes, accessibility improvements, translations of the UI labels, new examples in the docs, integrations with chat ops platforms (Slack/Telegram), MCP server adapters, you name it. Please run the existing CI matrix locally if your change touches the bundle code.
+- **Real-world feedback** → if you ship this in production, I'd love to hear about it. Open a discussion or drop me a line. Real use cases drive the roadmap.
+
+The goal is a small, sharp tool that does one thing well: turn any Symfony app into something humans and AI agents can both operate. Every contribution that pushes towards that goal is welcome.
 
 ## License
 
