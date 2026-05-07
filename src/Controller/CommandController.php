@@ -473,14 +473,33 @@ HTML;
         foreach ($options as $key => $value) {
             if (true === $value) {
                 $args[] = $key;
-            } elseif (false !== $value && '' !== $value && null !== $value) {
-                // Positional arguments (no -- prefix) are passed by value only.
-                // Options (--name) are passed as --name=value.
-                if (0 !== \strpos($key, '-')) {
-                    $args[] = (string) $value;
-                } else {
-                    $args[] = "{$key}={$value}";
+                continue;
+            }
+            if (false === $value || '' === $value || null === $value) {
+                continue;
+            }
+            // Variadic arguments (IS_ARRAY) and array options (VALUE_IS_ARRAY)
+            // are emitted as one CLI arg per element. A bare (string) cast on
+            // an array yields "Array" with a notice, breaking the command.
+            if (\is_array($value)) {
+                foreach ($value as $item) {
+                    if ('' === $item || null === $item) {
+                        continue;
+                    }
+                    if (0 !== \strpos($key, '-')) {
+                        $args[] = (string) $item;
+                    } else {
+                        $args[] = "{$key}={$item}";
+                    }
                 }
+                continue;
+            }
+            // Positional arguments (no -- prefix) are passed by value only.
+            // Options (--name) are passed as --name=value.
+            if (0 !== \strpos($key, '-')) {
+                $args[] = (string) $value;
+            } else {
+                $args[] = "{$key}={$value}";
             }
         }
 
