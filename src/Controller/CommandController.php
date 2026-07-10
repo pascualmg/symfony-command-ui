@@ -213,20 +213,41 @@ HTML;
      *
      * @Route("/commands", methods={"GET"}, name="symfony_command_ui_commands")
      */
-    public function commands(): JsonResponse
+    /**
+     * Base del subproceso: php + bin/console, desactivando auto_prepend_file/auto_append_file.
+     * En entornos con hooks de monitorizacion en el php.ini (p.ej. append_meter/prepend_errors),
+     * esos ficheros contaminan la salida del subproceso (rompen el --format=json) o lo hacen
+     * fallar; los neutralizamos solo para esta ejecucion CLI.
+     *
+     * @return string[]
+     */
+    private function phpConsoleBase(): array
     {
         $phpBinary = (new PhpExecutableFinder())->find() ?: 'php';
-        $process = new Process([$phpBinary, 'bin/console', 'list', '--format=json'], $this->projectDir);
+
+        return [$phpBinary, '-d', 'auto_prepend_file=', '-d', 'auto_append_file=', 'bin/console'];
+    }
+
+    public function commands(): JsonResponse
+    {
+        $process = new Process(\array_merge($this->phpConsoleBase(), ['list', '--format=json']), $this->projectDir);
         $process->setTimeout(10);
         $process->run();
 
         if (!$process->isSuccessful()) {
-            return new JsonResponse(['error' => 'Failed to list commands'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            return new JsonResponse([
+                'error' => 'Failed to list commands',
+                'exitCode' => $process->getExitCode(),
+                'detail' => \trim($process->getErrorOutput() ?: $process->getOutput()),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         $allCommands = \json_decode($process->getOutput(), true);
         if (!\is_array($allCommands)) {
-            return new JsonResponse(['error' => 'Invalid command list output'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            return new JsonResponse([
+                'error' => 'Invalid command list output',
+                'raw' => \mb_substr($process->getOutput(), 0, 500),
+            ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
 
         $result = [];
@@ -342,10 +363,8 @@ HTML;
             \set_time_limit(0);
             $start = \microtime(true);
 
-            $phpBinary = (new PhpExecutableFinder())->find() ?: 'php';
-
             $process = new Process(
-                \array_merge([$phpBinary, 'bin/console'], $args, ['--no-interaction']),
+                \array_merge($this->phpConsoleBase(), $args, ['--no-interaction']),
                 $this->projectDir
             );
             $process->setTimeout(self::TIMEOUT_SECONDS);
@@ -391,10 +410,8 @@ HTML;
         \set_time_limit(0);
         $start = \microtime(true);
 
-        $phpBinary = (new PhpExecutableFinder())->find() ?: 'php';
-
         $process = new Process(
-            \array_merge([$phpBinary, 'bin/console'], $args, ['--no-interaction']),
+            \array_merge($this->phpConsoleBase(), $args, ['--no-interaction']),
             $this->projectDir
         );
         $process->setTimeout(self::TIMEOUT_SECONDS);
