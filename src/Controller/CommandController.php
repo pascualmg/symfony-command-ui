@@ -34,6 +34,9 @@ class CommandController
 
     /** @var string */
     private $projectDir;
+
+    /** @var string */
+    private $environment;
     /** @var bool */
     private $thisIsReallyDangerous;
     /** @var bool */
@@ -57,6 +60,7 @@ class CommandController
 
     public function __construct(
         string $projectDir,
+        string $environment,
         bool $thisIsReallyDangerous,
         bool $exposeAll,
         array $allowedCommands,
@@ -69,6 +73,7 @@ class CommandController
         int $maxBufferedOutputKb = self::DEFAULT_MAX_BUFFERED_OUTPUT_KB
     ) {
         $this->projectDir = $projectDir;
+        $this->environment = $environment;
         $this->thisIsReallyDangerous = $thisIsReallyDangerous;
         $this->exposeAll = $exposeAll;
         $this->allowedCommands = $allowedCommands;
@@ -225,7 +230,10 @@ HTML;
     {
         $phpBinary = (new PhpExecutableFinder())->find() ?: 'php';
 
-        return [$phpBinary, '-d', 'auto_prepend_file=', '-d', 'auto_append_file=', 'bin/console'];
+        // La subprocess corre en el MISMO entorno que la app anfitriona (%kernel.environment%).
+        // Sin --env, el bin/console cae al APP_ENV por defecto (dev), que en despliegues reales
+        // no esta configurado ni tiene el log escribible -> permission denied al loguear.
+        return [$phpBinary, '-d', 'auto_prepend_file=', '-d', 'auto_append_file=', 'bin/console', '--env', $this->environment];
     }
 
     public function commands(): JsonResponse

@@ -30,6 +30,7 @@ class SymfonyCommandUIExtension extends Extension
             ->setPublic(true)
             ->addTag('controller.service_arguments')
             ->setArgument('$projectDir', '%kernel.project_dir%')
+            ->setArgument('$environment', '%kernel.environment%')
             ->setArgument('$thisIsReallyDangerous', '%symfony_command_ui.this_is_really_dangerous%')
             ->setArgument('$exposeAll', '%symfony_command_ui.expose_all%')
             ->setArgument('$allowedCommands', '%symfony_command_ui.allowed_commands%')
